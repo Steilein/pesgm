@@ -1,0 +1,65 @@
+# =============================================================================
+# Perfil do artigo do PES GM 2027 — sobreposto a realistic.yaml E journal.yaml.
+#
+#   python src/runner.py --grid --axes \
+#       --profile config/realistic.yaml,config/journal.yaml,config/pesgm.yaml \
+#       --scenarios config/scenarios_journal.yaml --solver gurobi
+#
+# Fecha as três pendências que o periódico deixava "para decidir com o Flavio"
+# (22/10/2026). Cada uma está atrás de uma opção desligada por padrão em src/,
+# de modo que o GTD LA e a grade results_journal/ continuam reproduzíveis.
+# =============================================================================
+
+paths:
+  results: results_pesgm
+  figures: figures_pesgm
+
+vdc:
+  # A referência EDF violava a rampa agregada do site (DC_A1 caía 37,8 MW numa
+  # hora, DC_A2 subia 40 MW, contra 20 MW/h), e o VDC pagava c^flex por ~29
+  # MWh/dia só para torná-la executável. A referência passa a ser o cronograma
+  # "o mais cedo possível, prazo mais curto primeiro" que respeita as mesmas
+  # rampas e capacidades do VDC (layers._ramp_feasible_by_job); ela é carga dos
+  # casos sem VDC e base do custo de flexibilidade.
+  reference: ramp_feasible
+  # PUE 1,20 nos três sites (antes 1,30). Fontes conferidas em 22/10/2026:
+  # LBNL 2024 (Shehabi et al., Fig. 4.5): mediana hyperscale 1,22 em 2023;
+  # Microsoft West US 3 (Phoenix): 1,223 medido em 2022; Google Mesa AZ:
+  # 1,22-1,28 nos primeiros trimestres; Google Henderson NV: 1,09 TTM. O VDC é
+  # um operador de nuvem, logo hyperscale; 1,30 ficava na borda superior.
+  # UMA PUE para os três: os sítios são desertos (zonas IECC 2B/3B) do mesmo
+  # operador, e a evidência de diferença climática é de 0,00-0,06, abaixo do
+  # efeito do projeto de resfriamento. Com PUE uniforme o valor não altera
+  # nenhum resultado --- o modelo é em energia elétrica e a PUE se cancela
+  # (flex_mw_it = f_d C_d / PUE, E_j idem, eficiência do Link 1/PUE) ---; só
+  # uma PUE DIFERENTE entre sites criaria o canal de migração com ganho.
+  sites:
+    - {name: DC_A1, bus: "118", area: 1, capacity_mw: 200, pue: 1.20}
+    - {name: DC_A2, bus: "218", area: 2, capacity_mw: 200, pue: 1.20}
+    - {name: DC_A3, bus: "318", area: 3, capacity_mw: 200, pue: 1.20}
+
+h2:
+  # O&M variável da cadeia de hidrogênio, 1,3 $/MWh na célula (por MWh
+  # elétrico ENTREGUE) e 1,3 $/MWh no eletrolisador (por MWh elétrico
+  # CONSUMIDO na produção). Fontes conferidas em 22/10/2026:
+  #  - PNNL 2020 (Mongird et al., metodologia de hidrogênio, Tab. 4): 0,8
+  #    $/MWh de troca de pilha + 0,5 $/MWh básico, para o eletrolisador e para
+  #    a célula, cada um; nota da Tab. 6: "$1.3/MWh charged or discharged";
+  #  - Hunter et al., Joule 2021, Tab. S25: 1,3 $/MWh para célula PEM e
+  #    eletrolisador PEM estacionários;
+  #  - DOE Hydrogen Program Record 19009: troca de pilha do H2A central
+  #    amortizada = 1,30 $/MWh consumido.
+  # Faixa nas fontes: célula 0,6-3,2 (EIA só insumos; reserva de pilha da EIA
+  # rateada a fator 1); eletrolisador 0,2-6,9 (DOE Record 24005, pilhas a custo
+  # de 2024: 5,5). Lu & Li e Saretta et al. não atribuem custo variável. O
+  # placeholder anterior (2 $/MWh só na célula, igual ao VPL) ficava acima de
+  # todo valor reportado diretamente e deixava o eletrolisador sem custo.
+  marginal_cost: 1.3
+  electrolyzer_marginal_cost: 1.3
+
+# Árvore de branch-and-bound em disco a partir de 0,5 GB: a máquina tem ~3 GB
+# livres e o guarda de memória já matou campanhas. Não muda o ótimo, só o pico
+# de memória (common.solver_options repassa ``options`` sem tocar no gap).
+solver:
+  options:
+    NodefileStart: 0.5

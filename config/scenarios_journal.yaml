@@ -1,0 +1,78 @@
+# =============================================================================
+# Cenários do artigo de periódico — fatorial completo de TRÊS recursos.
+#
+#   python src/runner.py --grid \
+#       --profile config/realistic.yaml,config/journal.yaml \
+#       --scenarios config/scenarios_journal.yaml --solver gurobi
+#
+# Arquivo SEPARADO de scenarios.yaml de propósito. Acrescentar E–H lá faria
+# `make grid` passar a resolver oito casos dentro de results/, que é a base
+# congelada do artigo submetido.
+#
+# Rotulagem (src/runner.py: RESOURCES = VPL, VDC, H2; rótulo = máscara + "A"):
+#
+#   A = {}              E = {H2}
+#   B = {VPL}           F = {VPL, H2}
+#   C = {VDC}           G = {VDC, H2}
+#   D = {VPL, VDC}      H = {VPL, VDC, H2}
+#
+# A–D são idênticos aos da grade da conferência, de propósito: permitem
+# conferir a campanha nova contra números já publicados antes de confiar nos
+# casos com hidrogênio.
+#
+# Da decomposição de Möbius (Eq. 19 do artigo) saem três coeficientes de par
+# --- VPL×VDC, VPL×H2, VDC×H2 --- e um de terceira ordem. A cota de cada um
+# soma os delta de TODOS os 2^|T| subconjuntos, então a de terceira ordem já
+# nasce com o dobro da largura da de par.
+# =============================================================================
+
+cases:
+  A: []
+  B: ["VPL"]
+  C: ["VDC"]
+  D: ["VPL", "VDC"]
+  E: ["H2"]
+  F: ["VPL", "H2"]
+  G: ["VDC", "H2"]
+  H: ["VPL", "VDC", "H2"]
+
+# Eixos de sensibilidade. `applies_to` inclui agora os casos com H2 sempre que
+# o parâmetro variado pertence a uma camada presente no caso: esquecer um deles
+# não quebra nada visivelmente — só faz a variação cair silenciosamente na
+# linha base, que é o tipo de erro que só aparece na tabela final.
+axes:
+  vre_share:                     # penetração VRE (energia disponível / carga)
+    param: vre.target_share
+    values: {vre30: 0.30, vre50: 0.50, vre70: 0.70}
+    base: vre50
+    # todos os casos: a penetração muda o sistema, não uma camada
+  vpl_size:                      # potência por terminal (4 h)
+    param: vpl.p_nom_mw
+    values: {vpl100: 100, vpl225: 225, vpl400: 400}
+    base: vpl225
+    applies_to: ["B", "D", "F", "H"]        # todos os que têm VPL
+  h2_size:                       # potência do eletrolisador e da célula
+    param: h2.p_nom_mw
+    values: {h2_100: 100, h2_225: 225, h2_400: 400}
+    base: h2_225
+    applies_to: ["E", "F", "G", "H"]        # todos os que têm H2
+  dc_flex:                       # fração flexível f_d
+    param: vdc.flex_fraction
+    values: {f02: 0.2, f05: 0.5, f08: 0.8}
+    base: f02
+    # todos os casos: a carga inflexível dos DCs depende de f_d
+  window_scale:                  # largura da janela batch
+    param: vdc.workloads.window_scale
+    values: {w05: 0.5, w10: 1.0, w20: 2.0}
+    base: w05
+    # todos os casos: a energia dos workloads gerados depende da janela
+  reserve_from_flex:             # flexibilidade conta como reserva
+    param: reserve.from_flex
+    values: {resoff: false, reson: true}
+    base: resoff
+    applies_to: ["B", "C", "D", "E", "F", "G", "H"]   # todos menos o base
+
+# Grade reduzida para depuração (make grid QUICK=1): dois dias, um eixo.
+quick:
+  days: ["spring_wind", "summer_peak"]
+  axes: ["vre_share"]

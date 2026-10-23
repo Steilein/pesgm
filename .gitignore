@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+*.nc
+*.log
+data/RTS-GMLC/
+results_sandbox*/

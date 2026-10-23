@@ -1,0 +1,238 @@
+# =============================================================================
+# CONFIGURAÇÃO DO CASO BASE
+# -----------------------------------------------------------------------------
+# Este arquivo concentra todos os parâmetros do modelo de Unit Commitment (UC)
+# day-ahead com rede, aplicado ao sistema teste RTS-GMLC modificado conforme
+# Ferreira & Unsihuay-Vila (Energies 2026) / tese PPGEE-UFPR.
+#
+# Cada bloco corresponde a uma fase do brief de implementação
+# (UC_VPL_VDC_pypsa_brief.md). Os valores aqui são os do CASO BASE; a grade de
+# sensibilidades (config/scenarios.yaml) sobrescreve um eixo por vez.
+# =============================================================================
+
+paths:
+  rts: data/RTS-GMLC/RTS_Data         # clone do repositório GridMod/RTS-GMLC
+  results: results                     # NetCDF por cenário + CSV de métricas
+  figures: figures                     # figuras em PDF vetorial (estilo IEEE)
+
+# -----------------------------------------------------------------------------
+# Dias representativos (Fase 5, §8.1 do brief). Selecionados por
+# src/select_days.py a partir da caracterização de rampa da demanda líquida e
+# confirmados manualmente. Cada dia = 24 snapshots horários (não se resolve o ano).
+# -----------------------------------------------------------------------------
+days:
+  spring_wind: "2020-03-12"      # 1. eólica alta + carga baixa (maior excedente VRE da primavera)
+  summer_peak: "2020-08-26"      # 2. pico anual de carga (verão)
+  solar_ramp: "2020-01-14"       # 3. maior rampa de 3 h da demanda líquida (outono/inverno)
+  median: "2020-03-16"           # 4. dia útil com energia de demanda líquida mediana
+
+# -----------------------------------------------------------------------------
+# Solver (Fase 5). HiGHS para desenvolvimento/validação; Gurobi para a grade
+# final. O gap relativo é único para os dois solvers, por comparabilidade (§7):
+# 0,5 % na depuração com HiGHS e 0,05 % na grade final com Gurobi, para que a
+# complementaridade VPL+VDC (dezenas de k$/dia) fique acima do ruído do gap.
+# -----------------------------------------------------------------------------
+solver:
+  name: gurobi                   # "highs" | "gurobi"
+  threads: 8
+  mip_rel_gap: 0.0005            # 0,05 %: grade final (a grade de depuração HiGHS usou 0,5 %)
+  time_limit: 1800               # segundos
+  log_to_console: false
+
+# -----------------------------------------------------------------------------
+# Geradores térmicos (Fase 1, §2.3)
+# -----------------------------------------------------------------------------
+thermal:
+  marginal_cost_load_point: 0.80  # ponto (fração de PMax) onde a curva de heat-rate é linearizada
+  shut_down_cost: 0.0             # $/partida; 0 conforme brief (degenerescência aceita)
+  nuclear_min_up_down: 168        # h; torna a nuclear efetivamente must-run
+  nuclear_p_min_pu: 0.90
+  # Condição inicial do UC (não existe histórico no RTS): unidades de base
+  # (min_up_time >= threshold) começam LIGADAS; as demais começam DESLIGADAS.
+  # Evita que toda unidade online na hora 0 pague custo de partida.
+  initial_status_min_up_threshold_h: 8
+
+# -----------------------------------------------------------------------------
+# Renováveis variáveis (VRE), hidro e armazenamento nativo do RTS (§2.4)
+# -----------------------------------------------------------------------------
+vre:
+  carriers: ["Wind", "Solar PV", "Solar RTPV", "CSP"]
+  marginal_cost: -0.1            # $/MWh: desempate interpretável do curtailment (§7)
+  rtpv_must_take: false          # true => RTPV não curtailável (p_min_pu = p_max_pu), como em PCMs
+  target_share: 0.50             # penetração VRE do caso base (energia disponível / carga)
+  # Base do escalonamento: "annual" = fator único para o ano (parque idêntico em
+  # todos os dias; penetração anual como na tese) — necessário para o critério F2;
+  # "day" = fator calculado sobre os 24 snapshots do caso (leitura literal do brief).
+  scaling_basis: annual
+hydro:
+  fixed_dispatch: true           # true => p_min_pu = p_max_pu (definição DAY_AHEAD do RTS)
+rts_storage:
+  include: true                  # 313_STORAGE_1 como StorageUnit (50 MW / 3 h, 85 %)
+
+# -----------------------------------------------------------------------------
+# Configuração estressada (Fase 2, §3.1) — tese / Energies 2026
+# -----------------------------------------------------------------------------
+stress:
+  load_area: 2
+  load_factor: 1.40              # +40 % de carga na Área 2
+  gen_area: 3                    # geração equivalente adicionada na Área 3
+  added_wind_share: 0.70         # fração eólica do acréscimo (restante em PV); ajustável se o corredor não saturar
+  # O acréscimo de capacidade (MW) = (load_factor - 1) x pico anual de carga da Área 2.
+  # Alocação do acréscimo: "candidates" = nós candidatos da tese (Phd_Files), no
+  # anel de 230 kV que alimenta N_318; "existing" = proporcional ao VRE existente
+  # (concentra em N_317 e congestiona a linha interna C29 antes do corredor).
+  allocation: candidates
+  candidate_sites:
+    - {bus: "314", carrier: Wind,     weight_mw: 400, profile_from: 317_WIND_1}
+    - {bus: "316", carrier: Wind,     weight_mw: 800, profile_from: 317_WIND_1}
+    - {bus: "319", carrier: Wind,     weight_mw: 800, profile_from: 317_WIND_1}
+    - {bus: "320", carrier: Solar PV, weight_mw: 300, profile_from: 320_PV_1}
+
+corridor:
+  bus_up: "318"                  # terminal a montante (Área 3)
+  bus_down: "223"                # terminal a jusante (Área 2)
+  branches: ["CB-1"]             # UID(s) em branch.csv; circuitos paralelos são somados
+  saturation_threshold: 0.98     # |p0| >= 0,98 s_nom => hora congestionada
+  # fallback documentado (§3.1): reduzir s_nom do corredor se não saturar
+  limit_corridor_factor: null    # ex.: 0.8 => s_nom x 0,8; null => desligado
+
+# -----------------------------------------------------------------------------
+# Camada VPL (Fase 3, §4)
+# -----------------------------------------------------------------------------
+vpl:
+  p_nom_mw: 200                  # por terminal; sensibilidade 100/200/400/650
+  hours: 4                       # 2–4 h
+  roundtrip_efficiency: 0.85     # eficiência ida-e-volta (mesmo valor da tese)
+  marginal_cost: 2.0             # $/MWh na descarga (degradação)
+  mode: emergent                 # "emergent" (padrão) | "explicit" (regra da tese com horas
+                                 # intermediárias livres) | "dedicated" (leitura estrita da
+                                 # seção 4.2.3: sem arbitragem fora dos estágios) | "hybrid"
+                                 # (regra só no pico sigma_t = 1; fora dele os dois BESS ficam
+                                 # totalmente livres, inclusive no mesmo modo)
+  sigma_high_percentile: 90      # demanda líquida >= P90 => sigma_t = 1 (alto uso)
+  sigma_low_percentile: 30       # demanda líquida <= P30 => sigma_t = 0 (baixo uso)
+  soc_initial: null             # null = SOC inicial livre (só ciclo fechado); 0.5 = ancorado em 50 % de e_nom
+  big_m: 2000                    # MW; deve exceder o fluxo máximo possível no corredor
+
+# Cadeia de hidrogênio: eletrólise a montante, reconversão a jusante.
+# Sítio conforme Lu & Li (arXiv:2206.14279), que põe eletrolisadores nas barras
+# eólicas e células a combustível nas barras de carga. Nessa configuração a
+# cadeia É uma virtual power line por outro portador: absorve excedente a
+# montante e injeta a jusante SEM usar o corredor. É o que torna o par H2-VPL
+# o mais interessante de medir.
+#
+# Potência igual à do VPL de propósito: com round trip 0,48 contra 0,85, a
+# comparação tem que isolar a eficiência, não o dimensionamento.
+h2:
+  p_nom_mw: 200                  # eletrolisador (P2H), na barra a montante
+  fc_p_nom_mw: 200               # célula a combustível (H2P), na barra a jusante
+  store_mwh: 3200                # estoque de H2 em MWh elétricos equivalentes (8 h de P2H)
+  eta_electrolyzer: 0.80         # Lu & Li: eta_e
+  eta_fuelcell: 0.60             # Lu & Li: eta_f  => round trip 0,48
+  cyclic: true                   # estoque fechado no dia, como o SOC do VPL
+  marginal_cost: 0.0             # degradação, $/MWh elétrico entregue pela célula (base do VPL); o periódico usa 2,0
+  # Estados do eletrolisador (Saretta et al., arXiv:2306.10962). Em "continuous"
+  # o eletrolisador é uma carga continuamente variável entre 0 e p_nom --- é a
+  # primeira versão. O modo de três estados (produz/standby/off) está em
+  # constraints.add_h2_states; o periódico o usa com os valores de Saretta et al.
+  # (ver config/journal.yaml). Os valores abaixo são só o padrão do modo.
+  mode: continuous               # continuous | three_state
+  min_load: 0.16                 # fração de p_nom (Saretta et al.: 1,6/10 MW); só em three_state
+  standby_load: 0.05             # fração de p_nom em standby (0,5/10 MW); só em three_state
+  startup_cost: 21000            # $ por partida a frio (100 EUR/MW x 200 MW); só em three_state
+
+# -----------------------------------------------------------------------------
+# Camada VDC (Fase 4, §5)
+# -----------------------------------------------------------------------------
+vdc:
+  sites:                         # um site por área, barras de maior carga (centros de carga)
+    - {name: DC_A1, bus: "118", area: 1, capacity_mw: 200, pue: 1.30}
+    - {name: DC_A2, bus: "218", area: 2, capacity_mw: 200, pue: 1.30}
+    - {name: DC_A3, bus: "318", area: 3, capacity_mw: 200, pue: 1.30}
+  flex_fraction: 0.50            # f_d: fração flexível da capacidade elétrica
+  # false => cada workload só roda no próprio site (sem transferência entre DCs):
+  # mantém a flexibilidade temporal e remove a espacial. Caso "DC local" da escada.
+  spatial: true
+  # Energia flexível diária por site = flex_utilization x f_d x C_d x 24 (MWh elétricos).
+  # flex_utilization < 1 é necessário para que exista folga temporal (com 1,0 a
+  # carga flexível teria de rodar a plena capacidade 24 h e não haveria flexibilidade).
+  flex_utilization: 0.70
+  # Baseline dos casos sem VDC (A e B): "flat" = energia dos workloads gerados
+  # distribuída uniformemente; "native" = mesmos jobs no site nativo a partir
+  # da chegada (EDF), sem flexibilidade temporal nem espacial (sensibilidade).
+  baseline: flat
+  ramp_limit_pu: 0.50            # rampa dos Links (fração de p_nom por hora)
+  workloads:
+    seed: 42
+    batch_share: 0.50            # fração da energia flexível em workloads batch (temporais)
+    n_batch_per_site: 2
+    n_migratable_per_site: 4
+    batch_window_h: [8, 12]      # largura da janela batch (escalada por window_scale)
+    migratable_window_h: [2, 4]
+    window_scale: 1.0            # sensibilidade: x0,5 / x1 / x2 (aplicado à janela batch)
+    migration_cost_range: [5, 20]  # $/MWh de energia do SITE (o marginal_cost do link
+                                   # incide sobre p0, elétrico); a 5-20 $/MWh de site
+                                   # correspondem 6,5-26 $/MWh de TI com PUE 1,30.
+                                   # 0 no site nativo; assimétrico entre sites
+
+# -----------------------------------------------------------------------------
+# Premissas econômicas da comparação normalizada VPL x VDC (src/economics.py)
+# -----------------------------------------------------------------------------
+# Só entram no pós-processamento: nenhuma delas afeta o UC. Servem para traduzir
+# o benefício operacional ($/dia) em benefício anualizado por unidade de ativo e
+# para confrontá-lo com o CAPEX que cada camada exige. O VDC não tem linha de
+# CAPEX porque a capacidade elétrica dos data centers já está instalada — o que
+# a camada adiciona é orquestração, e o custo de exercê-la (migração) já está
+# dentro do ``cost_total`` via ``marginal_cost`` dos Links.
+economics:
+  days_per_year: 366             # 2020 é bissexto (ano-base do RTS-GMLC)
+  discount_rate: 0.08            # taxa real anual (CRF)
+  lifetime_years: 15             # vida útil do BESS (valor adotado pelo NREL)
+
+  # --- BESS -------------------------------------------------------------------
+  # Fonte: Cole, W., Ramasamy, V., Turan, M. (2025). "Cost Projections for
+  # Utility-Scale Battery Storage: 2025 Update". NREL/TP-6A40-93281, Tabela 2.
+  # Custo overnight de um sistema COMPLETO de 4 h, em 2024$/kWh:
+  #     2024: 334 (low = mid = high)
+  #     2030: 207 / 279 / 354      2035: 147 / 243 / 339      2050: 108 / 178 / 307
+  # A faixa abaixo vai da projeção mais otimista de 2035 ao custo de 2024, ou seja,
+  # cobre o espaço de decisão de um projeto planejado hoje.
+  # Trajetória, não faixa: cada valor é um ponto datado da Tabela 2 do NREL.
+  #   147 = 2035 low   |   243 = 2035 mid   |   334 = 2024 (todos os cenários)
+  # Reportar os três evita ancorar a conclusão no cenário mais favorável.
+  bess_capex_usd_per_kwh: [147, 243, 334]
+  # FOM em $/kW-ano. O NREL adota 55 (4 % do custo de capacidade em $/kW), valor
+  # do topo da faixa, que pressupõe augmentation para manter a capacidade nominal
+  # ao longo da vida. A literatura levantada na mesma figura vai de ~13 (PNNL) a
+  # ~55. O VOM é zero por construção: o NREL aloca todo o custo operacional ao FOM
+  # supondo aproximadamente um ciclo por dia — premissa compatível com a ciclagem
+  # observada aqui (vpl_cycles_up/down ≈ 0,9–1,1).
+  bess_fom_usd_per_kw_year: 55
+  bess_fom_range_usd_per_kw_year: [13, 55]
+  # Rendimento de ida-e-volta adotado pelo NREL: 85 % — idêntico ao ``vpl.roundtrip_efficiency``.
+
+  # --- Reforço do corredor ----------------------------------------------------
+  # Fonte: MISO, "Transmission Cost Estimation Guide for MTEP24" (01/05/2024),
+  # Tabelas 4.1-1 e 4.1-3. Valores já incluem contingência (30 %) e AFUDC (7,5 %).
+  #   230 kV, circuito simples novo : $2,0–2,6 M/milha (mediana ~$2,2 M)
+  #   230 kV, recondutoramento      : $0,39 M/milha
+  # O corredor CB-1 tem 72 milhas e 500 MW (``branch.csv`` do RTS-GMLC), logo:
+  #   recondutoramento : $28,1 M  -> +100 MW (+20 %)
+  #   2º circuito      : $158,4 M -> +500 MW
+  # Anualizando por CRF a 40 anos e 8 %: 23,5 e 26,6 k$/MW-ano respectivamente.
+  # Os dois caminhos convergem, o que torna o valor robusto. Adota-se o
+  # recondutoramento, que é a obra compatível com o degrau L6 da escada.
+  corridor_reinforcement_usd_per_mw_year: 23500
+  corridor_length_miles: 72       # CB-1, de branch.csv
+  transmission_lifetime_years: 40
+
+# -----------------------------------------------------------------------------
+# Reserva girante (§6)
+# -----------------------------------------------------------------------------
+reserve:
+  enabled: true
+  load_fraction: 0.03            # R_t = 0,03 x carga_t + 0,05 x VRE_disponível_t
+  vre_fraction: 0.05
+  from_flex: false               # true => VDC e VPL contribuem para a reserva (sensibilidade)
+  common_reference: false       # true = mesmo R_t nos quatro casos (soma de volta o
+                                # equivalente plano da carga flexivel do VDC em C e D)

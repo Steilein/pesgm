@@ -1,0 +1,85 @@
+# =============================================================================
+# Perfil do artigo de periódico — sobreposto a base.yaml E a realistic.yaml.
+#
+#   python src/runner.py --grid \
+#       --profile config/realistic.yaml,config/journal.yaml \
+#       --scenarios config/scenarios_journal.yaml --solver gurobi
+#
+# A ordem importa: realistic.yaml traz a calibração do sistema solar-dominado
+# (radialização, corredor, penetração 35 %, mix de carriers, PV de telhado) e
+# este arquivo só troca o destino e acrescenta o que é do periódico. Encadear
+# em vez de copiar é deliberado: um conserto na calibração tem que chegar aos
+# dois artigos.
+#
+# NUNCA aponte `paths.results` para results/, results_realistic/,
+# results_ablation/ ou results_robust/ — são a base dos números do artigo
+# submetido, congelado na tag submissao-gtdla.
+# =============================================================================
+
+paths:
+  results: results_journal
+  figures: figures_journal
+
+# Os doze dias úteis mensais de energia de demanda líquida mediana — a base
+# anual representativa do artigo. Estavam só em extra_runs.MONTHLY_DAYS, o que
+# os deixava fora de `runner --grid`; declarados aqui, a grade do periódico os
+# cobre direto.
+#
+# `deep_merge` SOMA a estes os quatro dias extremos que já vêm de base.yaml
+# (spring_wind, summer_peak, solar_ramp, median). É deliberado: a base mensal dá
+# o número anual e os extremos dão o mecanismo, exatamente como na conferência.
+# São 16 dias × 8 casos na variação base.
+days:
+  m01: "2020-01-03"
+  m02: "2020-02-10"
+  m03: "2020-03-18"
+  m04: "2020-04-01"
+  m05: "2020-05-26"
+  m06: "2020-06-05"
+  m07: "2020-07-17"
+  m08: "2020-08-24"
+  m09: "2020-09-11"
+  m10: "2020-10-09"
+  m11: "2020-11-30"
+  m12: "2020-12-07"
+
+# O artigo de periódico mede interações de até terceira ordem, e a largura da
+# cota cresce como 2^k g c (Sec. III-H). Com |I| da ordem de 1 k$/dia e custo
+# base ~2063 k$, 0,05 % já engole o resultado: 0,01 % é requisito, não capricho.
+solver:
+  mip_rel_gap: 0.0001
+  time_limit: 1800
+
+# Custo de flexibilidade do data center (revisão de 30/09/2026, a mesma do GTD
+# LA): preço de oferta c^flex sobre a energia retirada do cronograma de
+# referência, igual para adiar no site e para transferir --- antes o tempo era
+# gratuito e só a migração pagava 5-20 $/MWh. Ver constraints.add_flex_cost.
+# A matriz de migração é zerada em vez de removida: o sorteio dela precede o
+# dos workloads, e zerar a faixa preserva os mesmos jobs.
+vdc:
+  flex_cost: 10.0
+  workloads:
+    migration_cost_range: [0.0, 0.0]
+
+# Hidrogênio: potência igual à do VPL para que a comparação isole a eficiência
+# (round trip 0,48 contra 0,85) e não o dimensionamento. O sítio vem de
+# layers.add_h2 — eletrolisador na barra a montante, célula na de jusante.
+h2:
+  p_nom_mw: 225                  # mesmo p_nom por terminal do VPL no perfil realista
+  fc_p_nom_mw: 225
+  store_mwh: 1800                # MWh de H2 no Store: 1800/(225*0,8) = 10 h de eletrólise a plena carga
+  # Eletrolisador de três estados (produz / standby / desligado), Saretta et
+  # al., arXiv:2306.10962, Tab. III: alcalino de 10 MW com P^min = 1,6 MW,
+  # P^sb = 0,5 MW e partida a frio de 1000 EUR. Frações mantidas e custo de
+  # partida escalado por MW: 100 EUR/MW x 225 MW = 22.500 EUR, a 1,053 USD/EUR
+  # (média de 2022, o ano dos dados deles) = 23.700 USD. Uma unidade só: uma
+  # planta modular teria carga mínima agregada menor (limitação declarada).
+  mode: three_state
+  min_load: 0.16
+  standby_load: 0.05
+  startup_cost: 23700
+  # OPEX não nulo para todo recurso do UC (Flavio, 23/09/2026): degradação de
+  # 2 $/MWh elétrico entregue pela célula, a mesma do VPL na descarga. Valor
+  # provisório, sem fonte própria para célula a combustível; layers.add_h2
+  # converte para a base p0 do Link.
+  marginal_cost: 2.0

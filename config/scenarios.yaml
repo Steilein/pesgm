@@ -1,0 +1,81 @@
+# =============================================================================
+# GRADE DE SENSIBILIDADES (Fase 5, §8.2 do brief)
+# -----------------------------------------------------------------------------
+# O runner combina:  dias  x  casos (A, B, C, D)  x  variações de um eixo por vez.
+# Cada variação sobrescreve UM parâmetro do caso base (config/base.yaml); os
+# demais permanecem nos valores base. A variação "base" é sempre incluída.
+#
+# Casos:
+#   A = referência (sem camadas de flexibilidade)
+#   B = A + VPL
+#   C = A + VDC
+#   D = A + VPL + VDC
+# =============================================================================
+
+cases:
+  A: []
+  B: ["VPL"]
+  C: ["VDC"]
+  D: ["VPL", "VDC"]
+
+# Eixos de sensibilidade. A chave de cada variação vira parte do nome do cenário.
+axes:
+  vre_share:                     # penetração VRE (energia disponível / carga)
+    param: vre.target_share
+    values: {vre30: 0.30, vre50: 0.50, vre70: 0.70}
+    base: vre50
+  vpl_size:                      # potência por terminal (4 h)
+    param: vpl.p_nom_mw
+    values: {vpl100: 100, vpl200: 200, vpl400: 400, vpl650: 650}   # 650 MW = dimensionamento do planejamento (tese), limite superior
+    base: vpl200
+    applies_to: ["B", "D"]       # só faz sentido quando a camada VPL está ativa
+  dc_flex:                       # fração flexível f_d
+    param: vdc.flex_fraction
+    values: {f02: 0.2, f05: 0.5, f08: 0.8}
+    base: f05
+    # A e B também: a carga inflexível dos DCs depende de f_d (mesma energia que C/D)
+  window_scale:                  # largura da janela batch
+    param: vdc.workloads.window_scale
+    values: {w05: 0.5, w10: 1.0, w20: 2.0}
+    base: w10
+    # A e B também: a energia dos workloads gerados depende da janela
+  reserve_from_flex:             # flexibilidade conta como reserva
+    param: reserve.from_flex
+    values: {resoff: false, reson: true}
+    base: resoff
+    applies_to: ["B", "C", "D"]
+  vpl_mode:                      # representação do VPL
+    param: vpl.mode
+    values: {emergent: emergent, explicit: explicit, dedicated: dedicated, hybrid: hybrid}
+    base: emergent
+    applies_to: ["B", "D"]
+
+# =============================================================================
+# ESCADA DE FLEXIBILIDADE — 6 casos (python src/extra_runs.py --ladder)
+# -----------------------------------------------------------------------------
+# Família paralela à grade A–D, com rotulagem própria (L1–L6) e eixo "ladder".
+# Cada degrau acrescenta exatamente um grau de liberdade ao anterior, de modo que
+# a diferença entre dois degraus consecutivos isola o valor daquele grau:
+#
+#   L2 − L1 : capacidade de transmissão virtual (BESS pareados, regra só no pico)
+#   L3 − L1 : deslocar trabalho no TEMPO, dentro de cada data center
+#   L4 − L3 : deslocar trabalho no ESPAÇO, entre data centers
+#   L5 − L4 : o que sobra de somar o VPL ao VDC completo (complementaridade)
+#   L6 − L1 : construir linha em vez de instalar flexibilidade (contrafactual)
+#
+# L2 e L5 usam o modo híbrido do VPL (regra de chaveamento só em sigma_t = 1):
+# é a representação que garante alívio no pico sem abrir mão da arbitragem no
+# resto do dia, e portanto a leitura defensável de um VPL contratado.
+# =============================================================================
+ladder:
+  L1: {label: base,    layers: [],         over: {}}
+  L2: {label: vpl,     layers: [VPL],      over: {vpl.mode: hybrid}}
+  L3: {label: dclocal, layers: [VDC],      over: {vdc.spatial: false}}
+  L4: {label: vdc,     layers: [VDC],      over: {}}
+  L5: {label: full,    layers: [VPL, VDC], over: {vpl.mode: hybrid}}
+  L6: {label: wire,    layers: [],         over: {corridor.limit_corridor_factor: 1.20}}
+
+# Grade reduzida para depuração com HiGHS (make grid SOLVER=highs QUICK=1):
+quick:
+  days: ["spring_wind", "summer_peak"]
+  axes: ["vre_share"]

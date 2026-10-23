@@ -1,0 +1,185 @@
+# =============================================================================
+# PERFIL REALISTA — sobrescreve config/base.yaml
+# -----------------------------------------------------------------------------
+# Motivação. A auditoria do caso base revelou quatro afastamentos da condição que
+# a tese pretende representar (corredor longo de exportação de geração remota,
+# tipo Norte–Sudeste ou tronco do SIC):
+#
+# 1. O corredor NÃO é gargalo. A Área 3 escoa por dois caminhos — CB-1 para a
+#    Área 2 (500 MW) e CA-1 para a Área 1 (500 MW), que por sua vez alimenta a
+#    Área 2 por AB1/AB2/AB3 (1.175 MW). Medido no caso base: CB-1 saturado em
+#    11 h e CA-1 a 31 % da capacidade. Restringir o CB-1 não cria escassez —
+#    o fluxo contorna. Foi por isso que apertá-lo de 500 para 300 MW deixou o
+#    benefício do VPL inalterado (76.565 -> 76.493 $/dia).
+#
+# 2. O corredor é curto. 72 milhas (116 km) contra os 1.000+ km dos corredores
+#    reais. O comprimento não entra no despacho, mas domina o custo de reforço:
+#    a 1.000 km o recondutoramento sai por $242 M em vez de $28 M.
+#
+# 3. O curtailment é implausível. 21,7 % nos quatro dias representativos e
+#    35,2 % a 70 % de VRE. Sistemas reais operam entre 1 e 8 %: acima disso o
+#    operador constrói linha, não convive com o corte.
+#
+# 4. Há descompasso de escala. O VPL armazena 1.600 MWh contra ~42.700 MWh/dia
+#    de corte no spring_wind — absorve 3,7 % de um dia. Nenhuma bateria dessa
+#    proporção altera o resultado, o que torna o teste da hipótese vazio.
+#
+# Uso:  python src/runner.py --config config/realistic.yaml ...
+# =============================================================================
+
+# Resultados em diretório próprio: o perfil realista é um sistema diferente, não
+# uma variação do caso base. Manter separado evita colisão de nomes de cenário e
+# preserva os 400+ resultados anteriores intactos para comparação.
+paths:
+  results: results_realistic
+  figures: figures_realistic
+
+# -----------------------------------------------------------------------------
+# 1. Escoamento radial (corrige o afastamento 1)
+# -----------------------------------------------------------------------------
+stress:
+  # Reduz as interligações da área exportadora que não pertencem ao corredor
+  # (no RTS-GMLC: CA-1, 325->121) a uma interligação de emergência. Preserva a
+  # conectividade elétrica da rede e elimina a rota alternativa de escoamento,
+  # que é o que caracteriza um tronco de exportação real.
+  radial_export: true
+  # null/0 => remove a interligação. Medido: com ela em 100 MW a exportação
+  # travava NELA (saturada) e não no tronco — o fluxo DC reparte-se entre a rota
+  # direta e a indireta, de modo que um limite pequeno na paralela restringe o
+  # total em vez de redirecionar. A topologia suporta a remoção: sem CA-1 a
+  # Área 3 liga à 2 só pelo corredor, e a Área 1 liga à 2 por AB1/AB2/AB3.
+  emergency_tie_mw: null
+  # Reforça a rede de coleta interna da área exportadora. Medido no caso base:
+  # a linha interna C29 da Área 3 satura 15 h com utilização média 0,95, contra
+  # 0,94 do próprio CB-1 — ou seja, o gargalo já era a coleta, não o tronco.
+  # Com a coleta apertada, instalar baterias nas pontas do corredor ataca a
+  # restrição errada e o teste da hipótese fica vazio. Um sistema exportador
+  # real dimensiona a coleta para entregar ao tronco.
+  collection_factor: 3.0
+  # Escopo do reforço. "export_area" reforça só a coleta da área exportadora;
+  # "all" reforça toda a rede EXCETO o corredor. Medido com o escopo restrito: a
+  # restrição ativa migrou para a linha B28 (216->219, interna à área
+  # importadora), saturada a 100 % com o corredor de 1.600 MW a apenas 60 %. Sem
+  # isolar o tronco não é possível medir o valor da sua capacidade.
+  reinforce_scope: all
+
+# -----------------------------------------------------------------------------
+# 2. Corredor longo e dimensionado (corrige 2 e 4)
+# -----------------------------------------------------------------------------
+corridor:
+  # Capacidade absoluta, CALIBRADA com escoamento radial, rede isolada e perfil
+  # solar (4 dias representativos, caso A):
+  #     600 MW -> curtailment 16,0 %, 10,0 h saturadas/dia
+  #     900 MW -> 14,3 %,  8,8 h   <- adotado
+  #    1200 MW -> 13,5 %,  5,0 h
+  # O curtailment tem piso de ~13,3 % que NÃO vem da rede: é mínimo técnico das
+  # térmicas ligadas (medido: despacho 1.290 MW = mínimo das unidades em serviço).
+  # Rigidez de ciclagem é parte legítima do problema da curva do pato e fica.
+  # A 900 MW o corredor congestiona nas horas 7-15 — a janela solar — em todos os
+  # dias, que é o regime em que deslocar energia no tempo pode substituir
+  # capacidade de transporte.
+  s_nom_mw: 900
+  # Comprimento realista. Entra apenas no pós-processamento econômico (custo de
+  # reforço proporcional); não afeta o despacho.
+  length_km: 1000
+  # Reatância mantida. Testei x_scale = 3,0 (linha longa compensada) e o efeito
+  # foi um artefato: o fluxo DC passou a evitar o corredor, que saiu inteiramente
+  # da lista de elementos carregados. Como o interesse aqui é capacidade e custo
+  # de transporte — não repartição de fluxo em malha —, escalar a reatância
+  # introduz distorção sem representar melhor o sistema-alvo.
+  x_scale: 1.0
+
+# -----------------------------------------------------------------------------
+# 3. Penetração VRE plausível (corrige 3)
+# -----------------------------------------------------------------------------
+vre:
+  # Composição do parque. Medido no RTS-GMLC estressado: a Área 3 tem 2.270 MW de
+  # eólica (69 % originais do caso-teste) que entregam 1.400-2.250 MW as 24 horas,
+  # contra 2.120 MW de solar concentrados entre 6 h e 16 h. O excedente resultante
+  # é um platô eólico com uma corcova solar — e o corredor congestiona de
+  # madrugada (horas 1-16 no spring_wind).
+  #
+  # Não é o fenômeno que a tese quer representar. Em sistemas com alta penetração
+  # fotovoltaica e geração distribuída (Brasil, Chile) o excedente é diurno e
+  # concentrado próximo ao meio-dia, com a noite limpa — a curva do pato.
+  #
+  # Os pesos reponderam as tecnologias antes do escalonamento global: a composição
+  # muda, o nível continua fixado por target_share.
+  carrier_weights:
+    Wind: 0.35          # reduz o platô noturno
+    Solar PV: 1.60
+    Solar RTPV: 2.50    # geração distribuída em escala compatível com o Brasil
+  # Geração distribuída NÃO é cortável: está atrás do medidor e o operador não a
+  # despacha. Tratá-la como curtailable (padrão do brief) subestima a pressão que
+  # a GD impõe sobre o corredor justamente nas horas de maior excedente.
+  rtpv_must_take: true
+
+  # CAUSA RAIZ do afastamento 3. A 50 % de penetração anual, no dia de maior
+  # vento (spring_wind) a geração inflexível — VRE disponível 4.795 MW mais
+  # must-run de 612 MW (nuclear + hidro de despacho fixo) — EXCEDE a carga total
+  # do sistema, 4.186 MW, em 17 das 24 horas. O corte não é congestionamento: é
+  # sobregeração sistêmica, sem destino possível em nenhum ponto da rede.
+  #
+  # É por isso que dimensionar o corredor de 800 a 2.500 MW deixou o curtailment
+  # inalterado em 19,2 % e o tronco nunca saturou. Enquanto houver sobregeração,
+  # nenhuma medida de transporte ou de armazenamento diário muda o resultado, e
+  # o teste da hipótese da linha virtual fica vazio.
+  #
+  # A 35 % a geração inflexível fica abaixo da carga em todas as horas, e o corte
+  # que sobra passa a ser de origem elétrica — que é a condição necessária para
+  # que aliviar o corredor tenha valor.
+  target_share: 0.35
+
+# -----------------------------------------------------------------------------
+# 4. VPL dimensionado ao corredor (corrige 4)
+# -----------------------------------------------------------------------------
+vpl:
+  # Dimensionado como fração do tronco, que é o critério de projetos reais de
+  # armazenamento para adiamento de transmissão. 125 MW/terminal = 25 % do
+  # corredor de 500 MW, faixa típica desse tipo de aplicação.
+  p_nom_mw: 225
+  hours: 4
+  mode: hybrid                   # representação defensável de um VPL contratado
+  # Base do estágio de uso. Medido neste sistema: com a base original
+  # ("net_demand"), a interseção entre horas de corredor congestionado e
+  # sigma_t = 1 é ZERO em todos os dias, e a correlação entre |fluxo no corredor|
+  # e demanda líquida vai de -0,26 a -0,86. A razão é estrutural: este é um
+  # corredor de EXPORTAÇÃO, que satura quando sobra renovável — isto é, quando a
+  # demanda líquida está baixa. Com a base errada a regra manda o par aliviar o
+  # corredor nas horas em que ele está folgado.
+  sigma_basis: corridor
+  # Percentis recalibrados ao regime. Os 90/30 do brief cobrem 3 h de alto uso em
+  # 24, dimensionados para um corredor que aperta no pico vespertino. Aqui o
+  # corredor congestiona em media 8,8 h/dia (37 % das horas) no caso A, de modo
+  # que o percentil 90 deixa a regra inativa na maior parte do congestionamento.
+  # 63 = 100 - 37 alinha o estagio de alto uso a frequencia medida.
+  sigma_high_percentile: 63
+
+# -----------------------------------------------------------------------------
+# 5. Data centers com folga realista
+# -----------------------------------------------------------------------------
+# Medido: com f_d = 0,5 e janelas de 8-12 h o VDC rende 24.275 $/dia; com
+# f_d = 0,2 e janelas pela metade, 3.957 $/dia (-84 %). A segunda combinação é a
+# que corresponde a data centers operando perto do limite, em que a energia é
+# cara demais para manter capacidade ociosa.
+vdc:
+  # O gerador de workloads passa a verificar a rampa AGREGADA do site na
+  # bissecção de factibilidade. Sem isso ele certifica cronogramas que o MILP
+  # rejeita: com janelas estreitas e sem migração espacial, o caso "DC local"
+  # (L3) fica infactível. Mantido desligado no caso base porque muda o
+  # dimensionamento em 0,43 % e quebraria a reprodutibilidade dos cenários já
+  # resolvidos — a aproximação de lá sub-restringe, e isso está documentado.
+  edf_respects_ramp: true
+  # Contrafactual dos casos SEM camada VDC (L1, L2, L6). O padrão "flat" espalha
+  # a energia dos data centers uniformemente nas 24 h; o caso flexível, ao
+  # contrário, prende cada workload à sua janela. Com as janelas estreitas deste
+  # perfil o "flexível" fica MAIS restrito que o baseline — o perfil plano nem é
+  # factível para aqueles jobs —, e o ΔL3 medido saiu NEGATIVO em dois dias, o
+  # que é impossível para valor de flexibilidade e denuncia a comparação.
+  # "native" é o contrafactual correto aqui: mesmos jobs, mesmo site, executados
+  # por EDF a partir da chegada, sem deslocamento no tempo nem no espaço.
+  baseline: native
+  flex_fraction: 0.20
+  spatial: true
+  workloads:
+    window_scale: 0.5
