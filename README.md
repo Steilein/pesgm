@@ -3,8 +3,8 @@
 Code, configuration and per-instance results for
 
 > G. Steilein, F. A. L. Ferreira and C. Unsihuay-Vila, "Interactions Among
-> Flexibility Providers in Day-Ahead Unit Commitment: Data Centers, Battery
-> Storage and Hydrogen," submitted to the 2027 IEEE PES General Meeting.
+> Flexibility Providers in Day-Ahead Unit Commitment: Data Centers, Virtual
+> Power Lines and Hydrogen," submitted to the 2027 IEEE PES General Meeting.
 
 A network-constrained day-ahead unit commitment (PyPSA + Gurobi) co-optimizes a
 virtual power line (a battery at each terminal of an export corridor), a
@@ -46,7 +46,7 @@ python src/interaction_stats.py --mobius --metrics results_pesgm/metrics.csv \
 | Directory | Campaign | MILPs |
 |---|---|---|
 | `results_pesgm/` | main grid: 16 days × 8 cases, 0.01 % gap | 128 |
-| `results_pesgm_corridor/` | corridor rated 600, 1200, 1500 MW (cases A, B, E, F; four extreme days) | 48 |
+| `results_pesgm_corridor/` | corridor rated 600, 1200, 1500 MW (cases A, B, E, F; the four days beyond the monthly ones) | 48 |
 | `results_pesgm_rigid/` | indivisible (rigid) workloads | 72 |
 | `results_pesgm_h2cont/` | continuously variable electrolyzer without operating cost (case E) | 12 |
 | `results_pesgm_robust/` | fuel cell at the upstream bus; VPL without the direction rule; cheaper electrolyzer cold start; 1 % standby | 176 |
@@ -59,6 +59,7 @@ python src/interaction_stats.py --mobius --metrics results_pesgm/metrics.csv \
 | Table II, Fig. 2, Sec. V-B, V-D, V-E | `results_pesgm/interaction_mobius.md`, `third_order.md`, `pesgm_numbers.md` |
 | Table III, Sec. V-C | `results_pesgm_corridor/corridor_report.md`, `results_pesgm_robust/robust_report.md` (control with the fuel cell moved) |
 | Sec. V-B (direction rule), V-A (electrolyzer sensitivity) | `results_pesgm_robust/robust_report.md` |
+| Sec. V-A (curtailment with both batteries free), V-B (sign test across days, share of the smaller resource), V-E (verdicts against the tolerance) | `results_pesgm/pesgm_numbers.md`, sections 6–8 |
 | Sec. V-F | `results_pesgm_rigid/indivisible.md` |
 
 ## Reproducing

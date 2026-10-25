@@ -113,6 +113,67 @@ def main() -> None:
           f"Perda do valor do VPL com o VDC: {100*abs(i)*1e3/dB:.2f} %; "
           f"perda do valor do VDC com o VPL: {100*abs(i)*1e3/dC:.1f} %.", ""]
 
+    # 6. estabilidade do sinal entre dias e fração do benefício conjunto
+    #    A cota (8) só cobre o erro do solver; a variação entre os doze dias é a
+    #    outra incerteza, e o teste de postos sinalizados diz se a média difere de zero.
+    from scipy import stats
+    SUBSETS = (("VPL–VDC", {"VPL", "VDC"}), ("VPL–H2", {"VPL", "H2"}),
+               ("VDC–H2", {"VDC", "H2"}), ("VPL–VDC–H2", {"VPL", "VDC", "H2"}))
+    alone = {r: (cost["A"] - cost[LABEL[frozenset({r})]]) / 1e3 for r in ("VPL", "VDC", "H2")}
+    rows = []
+    for name, T in SUBSETS:
+        per_day = pd.Series({d: mobius(pd.Series({(c, "cost_total"): wide.loc[(d, c), "cost_total"]
+                                                   for c in CASES}), T, "cost_total") / 1e3
+                             for d in MONTHLY})
+        joint = (cost["A"] - cost[LABEL[frozenset(T)]]) / 1e3
+        rows.append({"subset": name, "media": per_day.mean(), "negativos": int((per_day < 0).sum()),
+                     "p_wilcoxon": stats.wilcoxon(per_day).pvalue,
+                     "p_t": stats.ttest_1samp(per_day, 0).pvalue,
+                     "media_abs_sobre_conjunto_%": 100 * per_day.abs().mean() / joint,
+                     "sobre_menor_recurso_%": 100 * abs(per_day.mean()) / min(alone[r] for r in T)})
+    L += ["## 6. Sinal entre dias e fração do benefício conjunto (doze dias mensais)", "",
+          "p: teste de Wilcoxon (postos sinalizados) e t de uma amostra contra zero. "
+          "Fração: média de |I| sobre a redução conjunta do subconjunto (coluna da Tabela II). "
+          "Último: |média de I| sobre o valor sozinho do menor recurso do subconjunto.", "",
+          pd.DataFrame(rows).set_index("subset").round(3).to_markdown(), ""]
+
+    # 7. sensibilidade à tolerância: pior caso δ_S = g·ĉ_S, incumbentes fixos
+    def conclusive(g: float | None) -> int:
+        n = 0
+        for d in sorted(m["day_key"].unique()):
+            for _, T in SUBSETS:
+                Ts = sorted(T)
+                I = lo = hi = 0.0
+                for k in range(len(Ts) + 1):
+                    from itertools import combinations
+                    for S in combinations(Ts, k):
+                        r = wide.loc[(d, LABEL[frozenset(S)])]
+                        sign = (-1) ** (len(Ts) - k + 1)
+                        delta = (r["objective_milp"] - r["objective_bound"]) if g is None \
+                            else g * r["objective_milp"]
+                        I += sign * r["objective_milp"]
+                        lo, hi = (lo + delta, hi) if sign > 0 else (lo, hi + delta)
+                n += (I - lo > 0) or (I + hi < 0)
+        return n
+    L += ["## 7. Vereditos conclusivos contra a tolerância (16 dias, 64 coeficientes)", "",
+          "Pior caso: cada δ_S no limite g·ĉ_S, com os incumbentes atuais.", "",
+          f"- gaps obtidos: {conclusive(None)}"]
+    L += [f"- g = {100*g:g} %: {conclusive(g)}" for g in (1e-4, 5e-4, 1e-3, 5e-3)] + [""]
+
+    # 8. corte com as duas baterias livres (results_pesgm_robust, vpl_emergent)
+    rob = ROOT / os.environ.get("ROBUST_DIR", "results_pesgm_robust") / "metrics.csv"
+    if rob.exists():
+        e = pd.read_csv(rob)
+        e = e[(e["vpl_mode"] == "emergent") & e["day_key"].isin(MONTHLY)].set_index("day_key")
+        free = (cur["A"] - e[e["case"] == "B"]["curtailment_pct"]).reindex(MONTHLY)
+        L += ["## 8. Alívio de corte do VPL com as duas baterias livres (doze dias mensais)", "",
+              f"Corte médio com o VPL livre: {e[e['case'] == 'B']['curtailment_pct'].mean():.2f} % "
+              f"(híbrido {cur['B'].mean():.2f} %, H2 {cur['E'].mean():.2f} %, sem flexibilidade "
+              f"{cur['A'].mean():.2f} %).", "",
+              pd.DataFrame({"VPL_hibrido_pp": rel.VPL_pp, "VPL_livre_pp": free, "H2_pp": rel.H2_pp,
+                            "separa": rel.separa}).groupby("separa").mean().round(2)
+                .rename(index={True: "corredor separa preços", False: "sem separação"}).to_markdown(), ""]
+
     out = RES / "pesgm_numbers.md"
     out.write_text("\n".join(L), encoding="utf-8")
     print(f"-> {out}")

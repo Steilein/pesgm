@@ -65,3 +65,33 @@ Sinal: negativo = substituição (custo conjunto maior que a soma prevista).
 Valor do VPL sozinho 62.92 k$/dia; do VDC 4.99 k$/dia; I = -0.761 k$/dia.
 
 Perda do valor do VPL com o VDC: 1.21 %; perda do valor do VDC com o VPL: 15.3 %.
+
+## 6. Sinal entre dias e fração do benefício conjunto (doze dias mensais)
+
+p: teste de Wilcoxon (postos sinalizados) e t de uma amostra contra zero. Fração: média de |I| sobre a redução conjunta do subconjunto (coluna da Tabela II). Último: |média de I| sobre o valor sozinho do menor recurso do subconjunto.
+
+| subset     |   media |   negativos |   p_wilcoxon |   p_t |   media_abs_sobre_conjunto_% |   sobre_menor_recurso_% |
+|:-----------|--------:|------------:|-------------:|------:|-----------------------------:|------------------------:|
+| VPL–VDC    |  -0.761 |           9 |        0.176 | 0.165 |                        2.213 |                  15.264 |
+| VPL–H2     |  -5.128 |          12 |        0     | 0     |                        5.709 |                  16.006 |
+| VDC–H2     |  -0.677 |           8 |        0.176 | 0.14  |                        3.371 |                  13.585 |
+| VPL–VDC–H2 |  -0.179 |           7 |        0.622 | 0.794 |                        1.949 |                   3.599 |
+
+## 7. Vereditos conclusivos contra a tolerância (16 dias, 64 coeficientes)
+
+Pior caso: cada δ_S no limite g·ĉ_S, com os incumbentes atuais.
+
+- gaps obtidos: 57
+- g = 0.01 %: 54
+- g = 0.05 %: 23
+- g = 0.1 %: 9
+- g = 0.5 %: 0
+
+## 8. Alívio de corte do VPL com as duas baterias livres (doze dias mensais)
+
+Corte médio com o VPL livre: 5.68 % (híbrido 7.58 %, H2 7.24 %, sem flexibilidade 9.37 %).
+
+| separa                 |   VPL_hibrido_pp |   VPL_livre_pp |   H2_pp |
+|:-----------------------|-----------------:|---------------:|--------:|
+| sem separação          |             1.45 |           4.32 |    2.31 |
+| corredor separa preços |             2.27 |           2.81 |    1.89 |
