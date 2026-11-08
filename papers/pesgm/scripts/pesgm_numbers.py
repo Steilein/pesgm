@@ -87,6 +87,12 @@ def main() -> None:
           h2[["case", "h2_on_h", "h2_standby_h", "h2_startups", "h2_standby_mwh", "sb_frac"]]
             .groupby("case").agg(["min", "max"]).round(3).to_markdown(), "",
           f"Partidas a frio no total: {int(h2['h2_startups'].sum())}.", ""]
+    # médias do caso E (Sec. V-A): a entrada do eletrolisador é a eletrólise mais o standby
+    e = h2[h2["case"] == "E"][["h2_on_h", "h2_standby_h", "h2_standby_mwh", "h2_p2h_mwh"]].mean()
+    L += [f"Caso E, média: produzindo {e.h2_on_h:.2f} h/dia, em standby {e.h2_standby_h:.2f} h/dia, "
+          f"consumo de standby {e.h2_standby_mwh:.1f} MWh/dia = "
+          f"{100*e.h2_standby_mwh/(e.h2_p2h_mwh + e.h2_standby_mwh):.1f} % da entrada "
+          f"(eletrólise {e.h2_p2h_mwh:.1f} MWh/dia).", ""]
 
     # 4. interação por componente de custo (mensais, média)
     rows = []
@@ -173,6 +179,28 @@ def main() -> None:
               pd.DataFrame({"VPL_hibrido_pp": rel.VPL_pp, "VPL_livre_pp": free, "H2_pp": rel.H2_pp,
                             "separa": rel.separa}).groupby("separa").mean().round(2)
                 .rename(index={True: "corredor separa preços", False: "sem separação"}).to_markdown(), ""]
+
+    # 9. crédito de corte (desempate de 0,1 $/MWh): quanto move cada coeficiente e
+    #    se algum veredito muda quando sai dos custos, com os mesmos δ_S
+    worst, changed = 0.0, 0
+    for d in sorted(m["day_key"].unique()):
+        for _, T in SUBSETS:
+            Ts = sorted(T)
+            I = P = lo = hi = 0.0
+            from itertools import combinations
+            for k in range(len(Ts) + 1):
+                for S in combinations(Ts, k):
+                    r = wide.loc[(d, LABEL[frozenset(S)])]
+                    sign = (-1) ** (len(Ts) - k + 1)
+                    delta = r["objective_milp"] - r["objective_bound"]
+                    I += sign * r["objective_milp"]
+                    P += sign * r["cost_curtail_penalty"]
+                    lo, hi = (lo + delta, hi) if sign > 0 else (lo, hi + delta)
+            worst = max(worst, abs(P) / 1e3)
+            verdict = lambda x: int(x - lo > 0) - int(x + hi < 0)   # +1 compl., −1 subst., 0 indet.
+            changed += verdict(I) != verdict(I - P)
+    L += ["## 9. Crédito de corte fora dos custos (16 dias, 64 coeficientes)", "",
+          f"Maior |I| do crédito: {worst:.3f} k$/dia; vereditos alterados: {changed}.", ""]
 
     out = RES / "pesgm_numbers.md"
     out.write_text("\n".join(L), encoding="utf-8")

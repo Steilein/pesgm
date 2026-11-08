@@ -49,6 +49,8 @@ Dias mensais com separação: 5; sem: 7.
 
 Partidas a frio no total: 0.
 
+Caso E, média: produzindo 10.92 h/dia, em standby 13.08 h/dia, consumo de standby 147.2 MWh/dia = 8.7 % da entrada (eletrólise 1552.5 MWh/dia).
+
 ## 4. Interação por componente (média mensal; custos em k$/dia, partidas em nº/dia)
 
 Sinal: negativo = substituição (custo conjunto maior que a soma prevista).
@@ -95,3 +97,7 @@ Corte médio com o VPL livre: 5.68 % (híbrido 7.58 %, H2 7.24 %, sem flexibilid
 |:-----------------------|-----------------:|---------------:|--------:|
 | sem separação          |             1.45 |           4.32 |    2.31 |
 | corredor separa preços |             2.27 |           2.81 |    1.89 |
+
+## 9. Crédito de corte fora dos custos (16 dias, 64 coeficientes)
+
+Maior |I| do crédito: 0.197 k$/dia; vereditos alterados: 0.

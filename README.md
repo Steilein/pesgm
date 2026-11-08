@@ -48,19 +48,37 @@ python src/interaction_stats.py --mobius --metrics results_pesgm/metrics.csv \
 | `results_pesgm/` | main grid: 16 days × 8 cases, 0.01 % gap | 128 |
 | `results_pesgm_corridor/` | corridor rated 600, 1200, 1500 MW (cases A, B, E, F; the four days beyond the monthly ones) | 48 |
 | `results_pesgm_rigid/` | indivisible (rigid) workloads | 72 |
-| `results_pesgm_h2cont/` | continuously variable electrolyzer without operating cost (case E) | 12 |
+| `results_pesgm_h2cont/` | continuously variable electrolyzer without operating cost (case E); not cited in the submitted version | 12 |
 | `results_pesgm_robust/` | fuel cell at the upstream bus; VPL without the direction rule; cheaper electrolyzer cold start; 1 % standby | 176 |
 
 ### Paper ↔ files
 
+Section numbers follow the submitted version. `pesgm_numbers.md` §n is
+section n of `results_pesgm/pesgm_numbers.md`; `robust_report.md` is
+`results_pesgm_robust/robust_report.md`.
+
 | In the paper | Source |
 |---|---|
-| Table I, Sec. V-A | `results_pesgm/journal_numbers.md`, `results_pesgm/pesgm_numbers.md`, `results_pesgm_h2cont/metrics.csv` |
-| Table II, Fig. 2, Sec. V-B, V-D, V-E | `results_pesgm/interaction_mobius.md`, `third_order.md`, `pesgm_numbers.md` |
-| Table III, Sec. V-C | `results_pesgm_corridor/corridor_report.md`, `results_pesgm_robust/robust_report.md` (control with the fuel cell moved) |
-| Sec. V-B (direction rule), V-A (electrolyzer sensitivity) | `results_pesgm_robust/robust_report.md` |
-| Sec. V-A (curtailment with both batteries free), V-B (sign test across days, share of the smaller resource), V-E (verdicts against the tolerance) | `results_pesgm/pesgm_numbers.md`, sections 6–8 |
-| Sec. V-F | `results_pesgm_rigid/indivisible.md` |
+| Table I, Sec. V-A (value of each resource, curtailment, start-ups) | `results_pesgm/journal_numbers.md` |
+| Sec. V-A (curtailment with both batteries free) | `pesgm_numbers.md` §8 |
+| Sec. V-A (electrolyzer standby hours and energy) | `pesgm_numbers.md` §3 |
+| Sec. V-A (cheaper cold start, 1 % standby) | `robust_report.md`, `h2_su10` and `h2_sb1` |
+| Table II, Fig. 2 | `results_pesgm/interaction_mobius.md`; "share of joint" column: `pesgm_numbers.md` §6 |
+| Sec. V-B (sign test across days, share of the smaller resource) | `pesgm_numbers.md` §6 |
+| Sec. V-B (interaction by cost component, flexibility payment) | `pesgm_numbers.md` §4 |
+| Sec. V-B (curtailment credit removed from the costs) | `pesgm_numbers.md` §9 |
+| Sec. V-B (VPL–VDC asymmetry) | `pesgm_numbers.md` §5 |
+| Sec. V-B (VPL without the direction rule) | `robust_report.md`, `vpl_emergent` |
+| Sec. V-B (indivisible workloads) | `results_pesgm_rigid/indivisible.md` |
+| Table III, Sec. V-C | `results_pesgm_corridor/corridor_report.md` |
+| Sec. V-C (curtailment against the rating) | `results_pesgm_corridor/metrics.csv`, column `curtailment_mwh` (900 MW: `results_pesgm/metrics.csv`) |
+| Sec. V-C (control with the fuel cell moved upstream) | `robust_report.md`, `fc_up` |
+| Sec. V-D | `results_pesgm/third_order.md` |
+| Sec. V-E (bound widths; verdicts against the tolerance) | `results_pesgm/interaction_mobius.md`; `pesgm_numbers.md` §7 |
+| Sec. V-F | no new numbers |
+
+The offer-price sweep quoted in Sec. V-B comes from the authors' earlier
+paper (reference [17]) and is not reproduced here.
 
 ## Reproducing
 
@@ -71,7 +89,17 @@ required; academic licenses are free).
 pip install -r requirements.txt
 git clone https://github.com/GridMod/RTS-GMLC data/RTS-GMLC   # path set in config/base.yaml
 
-# main grid, corridor sweep and rigid workloads (a few hours on a laptop)
+# only the main grid of Tables I and II: 16 days x 8 cases = 128 MILPs, about
+# 2.5 h of Gurobi time on a laptop (--axes with no value runs the base variation
+# only; a single day, e.g. --days m01, solves its 8 cases)
+PROF=config/realistic.yaml,config/journal.yaml,config/pesgm.yaml
+for d in m01 m02 m03 m04 m05 m06 m07 m08 m09 m10 m11 m12 \
+         spring_wind summer_peak solar_ramp median; do
+  python src/runner.py --grid --axes --profile "$PROF" \
+      --scenarios config/scenarios_journal.yaml --solver gurobi --days "$d"
+done
+
+# everything: main grid, corridor sweep and rigid workloads
 bash papers/pesgm/scripts/run_campaign.sh
 # robustness tests
 bash papers/pesgm/scripts/run_robustness.sh
